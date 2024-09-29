@@ -9,10 +9,10 @@ import os
 
 from omegaconf import OmegaConf
 
-import dinov2.distributed as distributed
-from dinov2.logging import setup_logging
-from dinov2.utils import utils
-from dinov2.configs import dinov2_default_config
+import model.dinov2.distributed as distributed
+from model.dinov2.logging import setup_logging
+from model.dinov2.utils import utils
+from model.dinov2.configs import dinov2_default_config
 
 
 logger = logging.getLogger("dinov2")
@@ -43,6 +43,13 @@ def get_cfg_from_args(args):
     default_cfg = OmegaConf.create(dinov2_default_config)
     cfg = OmegaConf.load(args.config_file)
     cfg = OmegaConf.merge(default_cfg, cfg, OmegaConf.from_cli(args.opts))
+    return cfg
+
+
+def get_cfg(config_file):
+    default_cfg = OmegaConf.create(dinov2_default_config)
+    cfg = OmegaConf.load(config_file)
+    cfg = OmegaConf.merge(default_cfg, cfg, OmegaConf.from_cli(None))
     return cfg
 
 

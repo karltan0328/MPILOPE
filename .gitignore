@@ -1,1 +1,16 @@
 **/__pycache__
+
+data/LM_dataset
+data/onepose
+data/onepose_plusplus
+data/ycbv
+
+data/LM_dataset-points
+data/onepose-points
+data/onepose_plusplus-points
+data/ycbv-points
+
+weights/*.pt
+weights/*.pth
+weights/*.ckpt
+test.ipynb
