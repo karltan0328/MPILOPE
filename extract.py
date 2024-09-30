@@ -161,7 +161,7 @@ for label_idx, test_dict in enumerate(dir_list):
     name = label.split("-")[1]
     dir_name = os.path.dirname(sample_data)
     FULL_ROOT_DIR = os.path.join(ROOT_DIR, dir_name)
-    for rotation_key, rotation_list in zip(test_dict.keys(), test_dict.values()):
+    for rotation_list in test_dict.values():
         # print(rotation_list[:10])
         if param_dataset_idx[0] == '3':
             rotation_list = rotation_list[::2]
