@@ -13,4 +13,5 @@ data/ycbv-points
 weights/*.pt
 weights/*.pth
 weights/*.ckpt
-test.ipynb
+
+test*.ipynb
