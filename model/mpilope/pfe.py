@@ -29,14 +29,17 @@ class pfe(nn.Module):
     def __init__(self,
                  num_sample:int=300,
                  pts_size:int=2,
-                 N_freqs:int=9):
+                 N_freqs:int=9,
+                 attn_nhead:int=1):
         super().__init__()
         self.pts_size = pts_size
         self.N_freqs = N_freqs
+        self.attn_nhead = attn_nhead
         self.embedding = embedding(in_channels=self.pts_size,
                                    N_freqs=self.N_freqs,
                                    logscale=False)
-        self.transformer_mkpts = nn.Transformer(d_model=2 * self.pts_size * (2 * self.N_freqs + 1), nhead=1)
+        self.transformer_mkpts = nn.Transformer(d_model=2 * self.pts_size * (2 * self.N_freqs + 1),
+                                                nhead=self.attn_nhead)
         self.mlp = nn.Sequential(
             nn.Linear(in_features=2 * self.pts_size * (2 * self.N_freqs + 1) * num_sample,
                       out_features=2 * (2 * self.N_freqs + 1) * num_sample),
