@@ -1,4 +1,5 @@
 import cv2
+import torch
 import numpy as np
 
 def get_dir(src_point, rot_rad):
@@ -87,3 +88,76 @@ def get_image_crop_resize(image, box, resize_shape):
 
     trans_crop_homo = np.concatenate([trans_crop, np.array([[0, 0, 1]])], axis=0)
     return image_crop, trans_crop_homo
+
+def normalize_vector(v, return_mag=False):
+    v_mag = torch.sqrt(v.pow(2).sum(-1))
+    v_mag = torch.max(v_mag, torch.autograd.Variable(torch.FloatTensor([1e-8])).to(v.device))
+    v_mag = v_mag.view(v.shape[0], 1).expand(v.shape[0], -1)
+    v = v/v_mag
+    if(return_mag==True):
+        return v, v_mag[:, 0]
+    else:
+        return v
+
+def qua2mat(quaternion):
+    quat = normalize_vector(quaternion).contiguous()
+
+    # (B, 1)
+    qw = quat[..., 0].contiguous().view(quaternion.shape[0], 1)
+    qx = quat[..., 1].contiguous().view(quaternion.shape[0], 1)
+    qy = quat[..., 2].contiguous().view(quaternion.shape[0], 1)
+    qz = quat[..., 3].contiguous().view(quaternion.shape[0], 1)
+
+    # Unit quaternion rotation matrices computatation
+    xx = qx * qx # (B, 1)
+    yy = qy * qy
+    zz = qz * qz
+    xy = qx * qy
+    xz = qx * qz
+    yz = qy * qz
+    xw = qx * qw
+    yw = qy * qw
+    zw = qz * qw
+
+    # (B, 3)
+    row0 = torch.cat((1 - 2 * yy - 2 * zz,
+                      2 * xy - 2 * zw,
+                      2 * xz + 2 * yw), dim=-1)
+    row1 = torch.cat((2 * xy + 2 * zw,
+                      1 - 2 * xx - 2 * zz,
+                      2 * yz - 2 * xw), dim=-1)
+    row2 = torch.cat((2 * xz - 2 * yw,
+                      2 * yz + 2 * xw,
+                      1 - 2 * xx - 2 * yy), dim=-1)
+
+    matrix = torch.cat((row0.view(quaternion.shape[0], 1, 3),
+                        row1.view(quaternion.shape[0], 1, 3),
+                        row2.view(quaternion.shape[0], 1, 3)), dim=-2)
+
+    return matrix # (B, 3, 3)
+
+def cross_product(u, v):
+    i = u[..., 1] * v[..., 2] - u[..., 2] * v[..., 1]
+    j = u[..., 2] * v[..., 0] - u[..., 0] * v[..., 2]
+    k = u[..., 0] * v[..., 1] - u[..., 1] * v[..., 0]
+    out = torch.cat((i.view(u.shape[0], 1),
+                     j.view(u.shape[0], 1),
+                     k.view(u.shape[0], 1)), dim=-1)
+
+    return out # (B, 3)
+
+def o6d2mat(ortho6d):
+    # ortho6d - (B, 6)
+    x_raw = ortho6d[..., 0:3] # (B, 3)
+    y_raw = ortho6d[..., 3:6] # (B, 3)
+
+    x = normalize_vector(x_raw) # (B, 3)
+    z = cross_product(x, y_raw) # (B, 3)
+    z = normalize_vector(z) # (B, 3)
+    y = cross_product(z, x) # (B, 3)
+
+    x = x.view(x_raw.shape[0], 3, 1)
+    y = y.view(x_raw.shape[0], 3, 1)
+    z = z.view(x_raw.shape[0], 3, 1)
+    matrix = torch.cat((x, y, z), dim=-1) # (B, 3, 3)
+    return matrix
