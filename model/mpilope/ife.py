@@ -20,6 +20,12 @@ class ife(nn.Module):
                                            drop_path=drop_path,
                                            layer_decay_type=layer_decay_type,
                                            head_init_scale=head_init_scale)
+        self.mlp = nn.Sequential(
+            nn.Linear(in_features=1000,
+                      out_features=512),
+            nn.LeakyReLU(),
+            nn.Dropout(p=0.2),
+        )
 
     def forward(self,
                 x1:torch.tensor,
@@ -30,5 +36,7 @@ class ife(nn.Module):
             assert False, 'x2 shape error!'
         x1 = self.convnextv2(x1) # (B, nb_classes)
         x2 = self.convnextv2(x2) # (B, nb_classes)
+        x1 = self.mlp(x1).unsqueeze(1) # (B, 1, 512)
+        x2 = self.mlp(x2).unsqueeze(1) # (B, 1, 512)
         x = torch.cat((x1, x2), dim=1)
-        return x
+        return x # (B, 2, 512)
