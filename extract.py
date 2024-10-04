@@ -183,12 +183,14 @@ for label_idx, test_dict in enumerate(dir_list):
             mkpts0_path = os.path.join(points_file_path, "mkpts0")
             mkpts1_path = os.path.join(points_file_path, "mkpts1")
             pre_K_path = os.path.join(points_file_path, "pre_K")
+            mconf_path = os.path.join(points_file_path, 'mconf')
             crop_img0_path = os.path.join(points_file_path, "img0")
             crop_img1_path = os.path.join(points_file_path, "img1")
             Path(pre_bbox_path).mkdir(parents=True, exist_ok=True)
             Path(mkpts0_path).mkdir(parents=True, exist_ok=True)
             Path(mkpts1_path).mkdir(parents=True, exist_ok=True)
             Path(pre_K_path).mkdir(parents=True, exist_ok=True)
+            Path(mconf_path).mkdir(parents=True, exist_ok=True)
             Path(crop_img0_path).mkdir(parents=True, exist_ok=True)
             Path(crop_img1_path).mkdir(parents=True, exist_ok=True)
             # print("points_file_path =", points_file_path)
@@ -360,6 +362,7 @@ for label_idx, test_dict in enumerate(dir_list):
             mkpts0_masked = top_images[max_match_idx]["mkpts0_masked"]  # 需要保存
             mkpts1_masked = top_images[max_match_idx]["mkpts1_masked"]  # 需要保存
             pre_K = top_images[max_match_idx]["K"]                      # 需要保存
+            mconf = top_images[max_match_idx]['mconf']                  # 需要保存
             crop_img0 = top_images[max_match_idx]["crop_img0"]          # 需要保存
             crop_img1 = top_images[max_match_idx]["crop_img1"]          # 需要保存
             if (mkpts0_masked.shape[0] < 5 or mkpts1_masked.shape[0] < 5 or pre_K.shape[0] != 3):
@@ -370,6 +373,7 @@ for label_idx, test_dict in enumerate(dir_list):
             np.savetxt(os.path.join(mkpts0_path, f"{points_name}.txt"), mkpts0_masked)
             np.savetxt(os.path.join(mkpts1_path, f"{points_name}.txt"), mkpts1_masked)
             np.savetxt(os.path.join(pre_K_path, f"{points_name}.txt"), pre_K)
+            np.savetxt(os.path.join(mconf_path, f'{points_name}.txt'), mconf)
             cv2.imwrite(os.path.join(crop_img0_path, f"{points_name}.png"), crop_img0)
             cv2.imwrite(os.path.join(crop_img1_path, f"{points_name}.png"), crop_img1)
 
