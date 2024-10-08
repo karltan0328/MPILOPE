@@ -323,6 +323,7 @@ for label_idx, test_dict in enumerate(dir_list):
 
                 mkpts0_masked = []
                 mkpts1_masked = []
+                mconf_masked = []
 
                 # print(confidences)
                 # print(mkpts0.shape)
@@ -334,11 +335,13 @@ for label_idx, test_dict in enumerate(dir_list):
                     if crop_mask1[int(ptx)][int(pty)] == 255.0 and confidences[idx] > median_confidences:
                         mkpts0_masked.append(mkpts0[idx])
                         mkpts1_masked.append(mkpts1[idx])
+                        mconf_masked.append(confidences[idx])
                     else:
                         pass
 
                 mkpts0_masked = np.array(mkpts0_masked)
                 mkpts1_masked = np.array(mkpts1_masked)
+                mconf_masked = np.array(mconf_masked)
 
                 conf_mask = np.where(confidences > 0.9)
                 matching_score[top_idx] = conf_mask[0].shape[0]
@@ -346,7 +349,7 @@ for label_idx, test_dict in enumerate(dir_list):
                 top_images[top_idx]["mkpts1"] = mkpts1
                 top_images[top_idx]["mkpts0_masked"] = mkpts0_masked
                 top_images[top_idx]["mkpts1_masked"] = mkpts1_masked
-                top_images[top_idx]["mconf"] = confidences
+                top_images[top_idx]["mconf"] = mconf_masked
                 top_images[top_idx]["crop_img0"] = crop_img0
                 top_images[top_idx]["crop_img1"] = crop_img1
 
@@ -368,6 +371,8 @@ for label_idx, test_dict in enumerate(dir_list):
             if (mkpts0_masked.shape[0] < 5 or mkpts1_masked.shape[0] < 5 or pre_K.shape[0] != 3):
                 invalid_img += 1
                 continue
+
+            assert len(mconf) == len(mkpts0_masked) and len(mconf) == len(mkpts1_masked)
 
             np.savetxt(os.path.join(pre_bbox_path, f"{points_name}.txt"), pre_bbox)
             np.savetxt(os.path.join(mkpts0_path, f"{points_name}.txt"), mkpts0_masked)
