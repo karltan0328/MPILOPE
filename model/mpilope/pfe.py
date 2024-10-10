@@ -27,10 +27,10 @@ class embedding(nn.Module):
 
 class pfe(nn.Module):
     def __init__(self,
-                 num_sample:int=300,
-                 pts_size:int=2,
-                 N_freqs:int=9,
-                 attn_nhead:int=1):
+                 num_sample:int,
+                 pts_size:int,
+                 N_freqs:int,
+                 attn_nhead:int):
         super().__init__()
         self.pts_size = pts_size
         self.N_freqs = N_freqs
@@ -47,9 +47,24 @@ class pfe(nn.Module):
             nn.Dropout(p=0.5),
 
             nn.Linear(in_features=2 * (2 * self.N_freqs + 1) * num_sample,
+                      out_features=(2 * self.N_freqs + 1) * num_sample),
+            nn.LeakyReLU(),
+            nn.Dropout(p=0.4),
+
+            nn.Linear(in_features=(2 * self.N_freqs + 1) * num_sample,
+                      out_features=(2 * self.N_freqs + 1) * num_sample),
+            nn.LeakyReLU(),
+            nn.Dropout(p=0.3),
+
+            nn.Linear(in_features=(2 * self.N_freqs + 1) * num_sample,
                       out_features=1024),
             nn.LeakyReLU(),
             nn.Dropout(p=0.2),
+
+            nn.Linear(in_features=1024,
+                      out_features=1024),
+            nn.LeakyReLU(),
+            nn.Dropout(p=0.1),
         )
 
     def forward(self,

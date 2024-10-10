@@ -22,7 +22,7 @@ from model.mpilope.mpilope import mpilope
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', required=True, nargs='*', type=int)
-parser.add_argument('--num_sample', required=False, default=300, type=int)
+parser.add_argument('--num_sample', required=False, default=200, type=int)
 parser.add_argument('--cnn_model', required=False, default='b', choices=['n', 't', 'b', 'l', 'h'], type=str)
 parser.add_argument('--train_type', required=False, default=0, choices=[0, 1, 2], type=int)
 parser.add_argument('--rot_mode', required=False, default='6d', choices=['6d', 'quat', 'matrix'], type=str)
@@ -84,12 +84,12 @@ train_dataset, test_dataset = torch.utils.data.random_split(dataset=dataset,
                                                             lengths=[train_size, test_size])
 
 train_dataloader = DataLoader(train_dataset,
-                              batch_size=8,
+                              batch_size=16,
                               shuffle=False,
                               drop_last=True,
                               collate_fn=collate_fn(num_sample=param_num_sample))
 test_dataloader = DataLoader(test_dataset,
-                             batch_size=8,
+                             batch_size=16,
                              shuffle=False,
                              drop_last=True,
                              collate_fn=collate_fn(num_sample=param_num_sample))
@@ -414,10 +414,10 @@ logger.info(f'R:ACC15 = {all_data_res.mean(0).tolist()[10]}')
 
 df = pd.DataFrame(res_table, columns=headers)
 df_rounded = df.round(6)
-csv_name = f"{path[0][0]}-{(all_data_res.mean(0).tolist()[10]):.2f}-{datetime.now().strftime('%Y%m%d')}"
+csv_name = f"{train_start_time.strftime('%Y%m%d')}-{path[0][0]}-{(all_data_res.mean(0).tolist()[10]):.2f}"
 df_rounded.to_csv(f'./res/csv/{csv_name}.csv', sep=',', index=False)
 
-ckpts_name = f"{path[0][0]}-{(all_data_res.mean(0).tolist()[10]):.2f}-{datetime.now().strftime('%Y%m%d')}"
+ckpts_name = f"{train_start_time.strftime('%Y%m%d')}-{path[0][0]}-{(all_data_res.mean(0).tolist()[10]):.2f}"
 torch.save(model, f'./res/pth/{ckpts_name}.pth')
 
 test_end_time = datetime.now()

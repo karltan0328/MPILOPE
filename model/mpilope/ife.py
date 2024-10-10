@@ -6,12 +6,12 @@ from utils.convnextv2_utils import (
 
 class ife(nn.Module):
     def __init__(self,
-                 type:str='l',
-                 input_size:int=224,
-                 nb_classes:int=1000,
-                 drop_path:float=0.0,
-                 layer_decay_type:str='single',
-                 head_init_scale:float=0.001):
+                 type:str,
+                 input_size:int,
+                 nb_classes:int,
+                 drop_path:float,
+                 layer_decay_type:str,
+                 head_init_scale:float):
         super().__init__()
         self.input_size = input_size
         self.convnextv2 = build_convnextv2(type=type,
@@ -25,6 +25,11 @@ class ife(nn.Module):
                       out_features=512),
             nn.LeakyReLU(),
             nn.Dropout(p=0.2),
+
+            nn.Linear(in_features=512,
+                      out_features=512),
+            nn.LeakyReLU(),
+            nn.Dropout(p=0.1),
         )
 
     def forward(self,
