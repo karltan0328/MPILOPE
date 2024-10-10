@@ -15,3 +15,7 @@ weights/*.pth
 weights/*.ckpt
 
 test*.ipynb
+
+res/*
+*.xlsx
+*.csv

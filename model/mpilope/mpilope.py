@@ -55,11 +55,11 @@ class mpilope(nn.Module):
             raise NotImplementedError
 
     def convert2matrix(self, x: torch.tensor):
-        if self.mode == 'matrix':
+        if self.rotation_mode == 'matrix':
             matrix = x.view(x.shape[0], 3, 3)
-        elif self.mode == 'quat':
+        elif self.rotation_mode == 'quat':
             matrix = qua2mat(x)
-        elif self.mode == '6d':
+        elif self.rotation_mode == '6d':
             matrix = o6d2mat(x)
         return matrix
 
@@ -73,6 +73,6 @@ class mpilope(nn.Module):
         f = self.fa(fmkpts, fimgs)
 
         trans = self.translation_head(f)
-        rot = self.rotation_head(f)
+        rot = self.convert2matrix(self.rotation_head(f))
 
         return trans, rot
