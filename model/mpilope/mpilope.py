@@ -138,6 +138,10 @@ class mpilope(nn.Module):
         f = self.fa(fmkpts, fimgs) # (B, 2048)
 
         trans = self.translation_head(self.mlr_t(f))
-        rot = self.convert2matrix(self.rotation_head(self.mlp_r(f)))
+        try:
+            rot = self.convert2matrix(self.rotation_head(self.mlp_r(f)))
+        except Exception as e:
+            print(e)
+            rot = torch.eye(3).unsqueeze(0).expand(trans.shape[0], 3, 3)
 
         return trans, rot
