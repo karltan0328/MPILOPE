@@ -78,18 +78,26 @@ random.seed(20241003)
 torch.manual_seed(20241003)
 torch.cuda.manual_seed(20241003)
 
-train_size = int(0.8 * len(dataset))
-test_size = len(dataset) - train_size
-train_dataset, test_dataset = torch.utils.data.random_split(dataset=dataset,
-                                                            lengths=[train_size, test_size])
+train_size = int(0.7 * len(dataset))
+val_size = int(0.2 * len(dataset))
+test_size = len(dataset) - train_size - val_size
+train_dataset, val_dataset, test_dataset = torch.utils.data.random_split(
+    dataset=dataset,
+    lengths=[train_size, val_size, test_size]
+)
 
 train_dataloader = DataLoader(train_dataset,
-                              batch_size=16,
+                              batch_size=128,
                               shuffle=False,
                               drop_last=True,
                               collate_fn=collate_fn(num_sample=param_num_sample))
+val_dataloader = DataLoader(val_dataset,
+                            batch_size=128,
+                            shuffle=False,
+                            drop_last=True,
+                            collate_fn=collate_fn(num_sample=param_num_sample))
 test_dataloader = DataLoader(test_dataset,
-                             batch_size=16,
+                             batch_size=128,
                              shuffle=False,
                              drop_last=True,
                              collate_fn=collate_fn(num_sample=param_num_sample))
@@ -104,68 +112,141 @@ optimizer = torch.optim.Adam(model.parameters(), lr=1e-6, weight_decay=1e-4)
 
 train_start_time = datetime.now()
 
+train_mkpts0s = []
+train_mkpts1s = []
+train_img0s = []
+train_img1s = []
+train_rots = []
+train_ts = []
+for batch in train_dataloader:
+    train_pose0 = []
+    train_pose1 = []
+    train_mkpts0 = []
+    train_mkpts1 = []
+    train_img0 = []
+    train_img1 = []
+    for data in batch:
+        train_pose0.append(data['pose0'])
+        train_pose1.append(data['pose1'])
+        train_mkpts0.append(data['mkpts0'])
+        train_mkpts1.append(data['mkpts1'])
+        train_img0.append(data['img0'])
+        train_img1.append(data['img1'])
+
+    train_pose0 = np.stack(train_pose0, axis=0)
+    train_pose1 = np.stack(train_pose1, axis=0)
+    train_relative_pose = np.matmul(train_pose1, np.linalg.inv(train_pose0))
+    train_relative_pose = torch.from_numpy(train_relative_pose).float()
+    train_pose1 = torch.from_numpy(train_pose1).float()
+
+    train_rot = train_relative_pose[:, :3, :3]
+    train_t = train_pose1[:, :3, 3]
+    train_rots.append(train_rot)
+    train_ts.append(train_t)
+
+    train_mkpts0 = torch.from_numpy(np.stack(train_mkpts0, axis=0)).float()
+    train_mkpts1 = torch.from_numpy(np.stack(train_mkpts1, axis=0)).float()
+    train_img0 = torch.from_numpy(np.stack(train_img0, axis=0)).float()
+    train_img1 = torch.from_numpy(np.stack(train_img1, axis=0)).float()
+    train_img0 = train_img0.permute(0, 3, 1, 2)
+    train_img1 = train_img1.permute(0, 3, 1, 2)
+    train_mkpts0s.append(train_mkpts0)
+    train_mkpts1s.append(train_mkpts1)
+    train_img0s.append(train_img0)
+    train_img1s.append(train_img1)
+
+val_mkpts0s = []
+val_mkpts1s = []
+val_img0s = []
+val_img1s = []
+val_rots = []
+val_ts = []
+for batch in val_dataloader:
+    val_pose0 = []
+    val_pose1 = []
+    val_mkpts0 = []
+    val_mkpts1 = []
+    val_img0 = []
+    val_img1 = []
+    for data in batch:
+        val_pose0.append(data['pose0'])
+        val_pose1.append(data['pose1'])
+        val_mkpts0.append(data['mkpts0'])
+        val_mkpts1.append(data['mkpts1'])
+        val_img0.append(data['img0'])
+        val_img1.append(data['img1'])
+
+    val_pose0 = np.stack(val_pose0, axis=0)
+    val_pose1 = np.stack(val_pose1, axis=0)
+    val_relative_pose = np.matmul(val_pose1, np.linalg.inv(val_pose0))
+    val_relative_pose = torch.from_numpy(val_relative_pose).float()
+    val_pose1 = torch.from_numpy(val_pose1).float()
+
+    val_rot = val_relative_pose[:, :3, :3]
+    val_t = val_pose1[:, :3, 3]
+    val_rots.append(val_rot)
+    val_ts.append(val_t)
+
+    val_mkpts0 = torch.from_numpy(np.stack(val_mkpts0, axis=0)).float()
+    val_mkpts1 = torch.from_numpy(np.stack(val_mkpts1, axis=0)).float()
+    val_img0 = torch.from_numpy(np.stack(val_img0, axis=0)).float()
+    val_img1 = torch.from_numpy(np.stack(val_img1, axis=0)).float()
+    val_img0 = val_img0.permute(0, 3, 2, 1)
+    val_img1 = val_img1.permute(0, 3, 2, 1)
+    val_mkpts0s.append(val_mkpts0)
+    val_mkpts1s.append(val_mkpts1)
+    val_img0s.append(val_img0)
+    val_img1s.append(val_img1)
+
+patience = 5
+best_val_loss = float('inf')
+epochs_no_improve = 0
+early_stop = False
+
 for epoch in range(1, param_num_epochs + 1):
-    for i, batch in enumerate(train_dataloader):
+    model.train()
+    for i in range(len(train_dataloader)):
+        pre_t, pre_rot = model(train_mkpts0s[i].to(device=device),
+                               train_mkpts1s[i].to(device=device),
+                               train_img0s[i].to(device=device),
+                               train_img1s[i].to(device=device))
 
-        batch_K0 = []
-        batch_K1 = []
-        batch_pose0 = []
-        batch_pose1 = []
-        batch_mkpts0 = []
-        batch_mkpts1 = []
-        batch_pre_K = []
-        batch_img0 = []
-        batch_img1 = []
-
-        for data in batch:
-            batch_K0.append(data['K0'])
-            batch_K1.append(data['K1'])
-            # print(data['pose0'].shape)
-            if data['pose0'].shape[0] == 3:
-                data['pose0'] = np.vstack((data['pose0'], np.array([0, 0, 0, 1])))
-            if data['pose1'].shape[0] == 3:
-                data['pose1'] = np.vstack((data['pose1'], np.array([0, 0, 0, 1])))
-            batch_pose0.append(data['pose0'])
-            batch_pose1.append(data['pose1'])
-            batch_mkpts0.append(data['mkpts0'])
-            batch_mkpts1.append(data['mkpts1'])
-            batch_pre_K.append(data['pre_K'])
-            batch_img0.append(data['img0'])
-            batch_img1.append(data['img1'])
-
-        batch_pose0 = np.stack(batch_pose0, axis=0)
-        batch_pose1 = np.stack(batch_pose1, axis=0)
-        batch_relative_pose = np.matmul(batch_pose1, np.linalg.inv(batch_pose0))
-        batch_relative_pose = torch.from_numpy(batch_relative_pose).float()
-        batch_pose1 = torch.from_numpy(batch_pose1).float()
-
-        gt_rot = batch_relative_pose[:, :3, :3].to(device)
-        gt_t = batch_pose1[:, :3, 3].to(device)
-
-        batch_mkpts0 = torch.from_numpy(np.stack(batch_mkpts0, axis=0)).float().to(device)
-        batch_mkpts1 = torch.from_numpy(np.stack(batch_mkpts1, axis=0)).float().to(device)
-
-        batch_img0 = torch.from_numpy(np.stack(batch_img0, axis=0)).float()
-        batch_img1 = torch.from_numpy(np.stack(batch_img1, axis=0)).float()
-        batch_img0 = batch_img0.permute(0, 3, 2, 1).to(device)
-        batch_img1 = batch_img1.permute(0, 3, 2, 1).to(device)
-
-        pre_t, pre_rot = model(batch_mkpts0,
-                               batch_mkpts1,
-                               batch_img0,
-                               batch_img1)
-
-        t_loss = L2(gt_t, pre_t)
-        rot_loss = geodesic_distance(gt_rot, pre_rot)
-
+        t_loss = L2(train_ts[i].to(device=device), pre_t)
+        rot_loss = geodesic_distance(train_rots[i].to(device=device), pre_rot)
         loss = t_loss + rot_loss
 
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
 
-        if (i + 1) % (len(train_dataloader) // 5) == 0 or i == len(train_dataloader) - 1:
-            print(f'dataset: {path[0][0]}, epoch: {epoch}/{param_num_epochs}, r_loss: {rot_loss.item():.4f}, t_loss: {t_loss.item():.4f}, loss: {loss.item():.4f}')
+    model.eval()
+    val_loss = 0.0
+    with torch.no_grad():
+        for i in range(len(val_dataloader)):
+            pre_t, pre_rot = model(val_mkpts0s[i].to(device=device),
+                                   val_mkpts1s[i].to(device=device),
+                                   val_img0s[i].to(device=device),
+                                   val_img1s[i].to(device=device))
+            t_loss = L2(val_ts[i].to(device=device), pre_t)
+            rot_loss = geodesic_distance(val_rots[i].to(device=device), pre_rot)
+            val_loss += t_loss.item() + rot_loss.item()
+
+    val_loss /= len(val_dataloader)
+
+    if val_loss < best_val_loss:
+        best_val_loss = val_loss
+        epochs_no_improve = 0
+    else:
+        epochs_no_improve += 1
+        print(f'No improvement for {epochs_no_improve} epoch(s)')
+
+    if epochs_no_improve >= patience:
+        print(f'Early stopping after {epoch} epochs')
+        early_stop = True
+        break
+
+    print(f'{param_dataset_idx}, epoch: {epoch}/{param_num_epochs}, val_loss: {val_loss:.4f}, r_loss: {rot_loss.item():.4f}, t_loss: {t_loss.item():.4f}, loss: {loss.item():.4f}')
+
 
 train_end_time = datetime.now()
 
@@ -414,10 +495,13 @@ logger.info(f'R:ACC15 = {all_data_res.mean(0).tolist()[10]}')
 
 df = pd.DataFrame(res_table, columns=headers)
 df_rounded = df.round(6)
-csv_name = f"{train_start_time.strftime('%Y%m%d')}-{path[0][0]}-{(all_data_res.mean(0).tolist()[10]):.2f}"
+data_name = ''
+for idx in param_dataset_idx:
+    data_name += str(idx)
+csv_name = f"{train_start_time.strftime('%Y%m%d')}-{data_name}-{(all_data_res.mean(0).tolist()[10]):.2f}"
 df_rounded.to_csv(f'./res/csv/{csv_name}.csv', sep=',', index=False)
 
-ckpts_name = f"{train_start_time.strftime('%Y%m%d')}-{path[0][0]}-{(all_data_res.mean(0).tolist()[10]):.2f}"
+ckpts_name = f"{train_start_time.strftime('%Y%m%d')}-{data_name}-{(all_data_res.mean(0).tolist()[10]):.2f}"
 torch.save(model, f'./res/pth/{ckpts_name}.pth')
 
 test_end_time = datetime.now()

@@ -223,7 +223,7 @@ def geodesic_distance(X, X1=None):
 
     m = X @ X1.permute(0, 2, 1)
     cos = (m[:, 0, 0] + m[:, 1, 1] + m[:, 2, 2] - 1) / 2
-    cos = torch.clamp(cos, -0.999999, 0.999999) # handle numercial errors
+    cos = torch.clamp(cos, -1.0, 1.0) # handle numercial errors
     # cos = torch.min(cos, torch.ones(X.shape[0])).to(device)
     # cos = torch.max(cos, -torch.ones(X.shape[0])).to(device)
     return torch.acos(cos).mean()
