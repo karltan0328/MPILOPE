@@ -108,7 +108,7 @@ model = mpilope(rotation_mode=param_rot_mode,
 model = model.train().to(device=device)
 
 L2 = nn.MSELoss()
-optimizer = torch.optim.Adam(model.parameters(), lr=1e-4, weight_decay=1e-4)
+optimizer = torch.optim.Adam(model.parameters(), lr=1e-6, weight_decay=1e-4)
 
 train_start_time = datetime.now()
 

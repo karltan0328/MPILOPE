@@ -142,6 +142,6 @@ class mpilope(nn.Module):
             rot = self.convert2matrix(self.rotation_head(self.mlp_r(f)))
         except Exception as e:
             print(e)
-            rot = torch.eye(3).unsqueeze(0).expand(trans.shape[0], 3, 3)
+            rot = torch.eye(3).unsqueeze(0).expand(trans.shape[0], 3, 3).to(device=trans.device)
 
         return trans, rot
