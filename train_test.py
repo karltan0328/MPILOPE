@@ -198,7 +198,7 @@ for batch in val_dataloader:
     val_img0s.append(val_img0)
     val_img1s.append(val_img1)
 
-patience = 5
+patience = 50
 best_val_loss = float('inf')
 epochs_no_improve = 0
 early_stop = False
