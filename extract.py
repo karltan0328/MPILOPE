@@ -48,6 +48,7 @@ parser.add_argument('--sam_model', required=False, default='h', choices=['h', 'l
 parser.add_argument('--dinov2_model', required=False, default='s', choices=['g', 'l', 'b', 's'], type=str)
 # parser.add_argument('--train_type', required=False, default='pts+img', choices=['pts+img', 'pts', 'img'], type=str)
 # parser.add_argument('--rot_mode', required=False, default='6d', choices=['matrix', 'quat', '6d'], type=str)
+parser.add_argument('--top_k', required=False, default=3, type=int)
 
 # parser.add_argument('--num_epochs', required=False, default=500, type=int)
 parser.add_argument('--gpu_name', required=False, default='cpu', type=str)
@@ -57,6 +58,7 @@ args = parser.parse_args()
 param_dataset_idx = args.dataset
 param_sam_model_type = args.sam_model
 param_dinov2_model_type = args.dinov2_model
+param_top_k = args.top_k
 if args.gpu_name == 'cpu':
     device = torch.device('cpu')
 else:
@@ -145,6 +147,8 @@ else:
 invalid_img = 0
 all_img = 0
 
+invalid_img_path_list = []
+
 for label_idx, test_dict in enumerate(dir_list):
     if param_dataset_idx[0] == '0':
         logger.info(f"LINEMOD: {label_idx}/{len(dir_list) - 1}")
@@ -179,29 +183,8 @@ for label_idx, test_dict in enumerate(dir_list):
             else:
                 pass
 
-            pre_bbox_path = os.path.join(points_file_path, "pre_bbox")
-            mkpts0_path = os.path.join(points_file_path, "mkpts0")
-            mkpts1_path = os.path.join(points_file_path, "mkpts1")
-            pre_K_path = os.path.join(points_file_path, "pre_K")
-            mconf_path = os.path.join(points_file_path, 'mconf')
-            crop_img0_path = os.path.join(points_file_path, "img0")
-            crop_img1_path = os.path.join(points_file_path, "img1")
-            Path(pre_bbox_path).mkdir(parents=True, exist_ok=True)
-            Path(mkpts0_path).mkdir(parents=True, exist_ok=True)
-            Path(mkpts1_path).mkdir(parents=True, exist_ok=True)
-            Path(pre_K_path).mkdir(parents=True, exist_ok=True)
-            Path(mconf_path).mkdir(parents=True, exist_ok=True)
-            Path(crop_img0_path).mkdir(parents=True, exist_ok=True)
-            Path(crop_img1_path).mkdir(parents=True, exist_ok=True)
-            # print("points_file_path =", points_file_path)
-            # print("mkpts0_path =", mkpts0_path)
-            # print("mkpts1_path =", mkpts1_path)
-            # print("pre_K_path =", pre_K_path)
-            points_name = pair_name.split("/")[-1]
-
-            if os.path.exists(os.path.join(pre_bbox_path, f"{points_name}.txt")):
-                continue
-
+            # if os.path.exists(os.path.join(pre_bbox_path, f"{points_name}.txt")):
+            #     continue
 
             base_name = os.path.basename(pair_name)
             if param_dataset_idx[0] == '3':
@@ -226,19 +209,36 @@ for label_idx, test_dict in enumerate(dir_list):
                 # pose0_path = image0_name.replace("color", "poses_ba").replace("png", "txt")
                 # pose1_path = image1_name.replace("color", "poses_ba").replace("png", "txt")
 
+            # 加载图片
+            image0 = cv2.imread(image0_name)
+            image1 = cv2.imread(image1_name)
+
+            # 加载相机内参
             K0 = np.loadtxt(K0_path, delimiter=' ')
             K1 = np.loadtxt(K1_path, delimiter=' ')
-            image0 = cv2.imread(image0_name)
-            # prompt image input to dinov2
-            ref_torch_image = set_torch_image(image0, center_crop=True).to(device=device)
-            ref_fea = get_cls_token_torch(dinov2, ref_torch_image)
 
-            image1 = cv2.imread(image1_name)
-            image_h, image_w, _ = image1.shape
-            # target image input to sam
+            # 将target image输入到sam中
             masks = MASK_GEN.generate(image1)
-            similarity_score, top_images = np.array([0, 0, 0], np.float32), [{}, {}, {}]
+            similarity_score = np.array([0 for _ in range(param_top_k)], np.float32)
+            top_images = [{} for _ in range(param_top_k)]
             compact_percent = 0.3
+
+            # 计算中位数 筛选一半的mask
+            # masks_scores_predicted_iou = []
+            # masks_scores_stability_score = []
+            # for mask in masks:
+            #     masks_scores_predicted_iou.append(mask["predicted_iou"])
+            #     masks_scores_stability_score.append(mask["stability_score"])
+
+            ## 归一化
+            # masks_scores_predicted_iou = np.array(masks_scores_predicted_iou)
+            # masks_scores_stability_score = np.array(masks_scores_stability_score)
+            # masks_scores_predicted_iou = (masks_scores_predicted_iou - masks_scores_predicted_iou.min()) / (masks_scores_predicted_iou.max() - masks_scores_predicted_iou.min())
+            # masks_scores_stability_score = (masks_scores_stability_score - masks_scores_stability_score.min()) / (masks_scores_stability_score.max() - masks_scores_stability_score.min())
+
+            ## 根据中位数筛选mask
+            # masks_scores = masks_scores_predicted_iou + masks_scores_stability_score
+            # median_masks_scores = median(masks_scores)
 
             # matching
             """
@@ -251,28 +251,27 @@ for label_idx, test_dict in enumerate(dir_list):
             mask['crop_box']:           the crop of the image used to generate this mask in XYWH format
             """
 
-            # 计算中位数 筛选一半的mask
-            masks_scores = []
-            for mask in masks:
-                masks_scores.append(mask['predicted_iou'] + mask['stability_score'])
-            median_masks_scores = median(masks_scores)
+            # 将prompt图转换为tensor，然后使用dinov2将prompt图转换为特征
+            ref_torch_image = set_torch_image(image0, center_crop=True).to(device=device)
+            ref_fea = get_cls_token_torch(dinov2, ref_torch_image)
 
-            for mask in masks:
-                if mask['predicted_iou'] + mask['stability_score'] < median_masks_scores:
-                    continue
-                object_mask = np.expand_dims(mask["segmentation"], -1)
+            for i, mask in enumerate(masks):
+                # if masks_scores[i] < median_masks_scores:
+                #     continue
+
                 x0, y0, w, h = mask["bbox"]
                 x1, y1 = x0 + w, y0 + h
                 x0 = int(x0 - w * compact_percent)
                 y0 = int(y0 - h * compact_percent)
                 x1 = int(x1 + w * compact_percent)
                 y1 = int(y1 + h * compact_percent)
+
                 box = np.array([x0, y0, x1, y1])
                 resize_shape = np.array([y1 - y0, x1 - x0])
                 K_crop, K_crop_homo = get_K_crop_resize(box, K1, resize_shape)
                 image_crop, _ = get_image_crop_resize(image1, box, resize_shape)
                 mask_crop, _ = get_image_crop_resize(np.float32(mask["segmentation"]) * 255, box, resize_shape)
-                # object_mask, _ = get_image_crop_resize(object_mask, box, resize_shape)
+
                 box_new = np.array([0, 0, x1 - x0, y1 - y0])
                 if param_dataset_idx[0] == '0' or param_dataset_idx[0] == '3':
                     resize_shape = np.array([256, 256])
@@ -284,12 +283,14 @@ for label_idx, test_dict in enumerate(dir_list):
                 image_crop, _ = get_image_crop_resize(image_crop, box_new, resize_shape)
                 mask_crop, _ = get_image_crop_resize(mask_crop, box_new, resize_shape)
                 crop_tensor = set_torch_image(image_crop, center_crop=True).to(device=device)
+
                 with torch.no_grad():
                     fea = get_cls_token_torch(dinov2, crop_tensor)
+
                 score = F.cosine_similarity(ref_fea, fea, dim=1, eps=1e-8)
                 if (score.item() > similarity_score).any():
-                    mask['crop_mask'] = mask_crop
-                    mask["crop_image"] = image_crop
+                    mask["crop_img1_transformed"] = image_crop
+                    mask['crop_img1_transformed_mask'] = mask_crop
                     mask["K"] = K_crop
                     mask["bbox"] = box
                     min_idx = np.argmin(similarity_score)
@@ -297,20 +298,21 @@ for label_idx, test_dict in enumerate(dir_list):
                     top_images[min_idx] = mask.copy()
 
             crop_img0 = image0
-            img0 = cv2.cvtColor(image0, cv2.COLOR_BGR2GRAY)
-            img0 = torch.from_numpy(img0).float()[None] / 255.
-            img0 = img0.unsqueeze(0).to(device=device)
+            loftr_img0 = cv2.cvtColor(image0, cv2.COLOR_BGR2GRAY)
+            loftr_img0 = torch.from_numpy(loftr_img0).float()[None] / 255.
+            loftr_img0 = loftr_img0.unsqueeze(0).to(device=device)
 
             matching_score = [0 for _ in range(len(top_images))]
             for top_idx in range(len(top_images)):
-                if 'crop_image' not in top_images[top_idx]:
+                if 'crop_img1_transformed' not in top_images[top_idx]:
                     continue
-                crop_mask1 = top_images[top_idx]['crop_mask']
-                crop_img1 = top_images[top_idx]["crop_image"]
-                img1 = cv2.cvtColor(crop_img1, cv2.COLOR_BGR2GRAY)
-                img1 = torch.from_numpy(img1).float()[None] / 255.
-                img1 = img1.unsqueeze(0).to(device=device)
-                batch = {'image0':img0, 'image1':img1}
+
+                crop_img1_transformed_mask = top_images[top_idx]['crop_img1_transformed_mask']
+                crop_img1_transformed = top_images[top_idx]["crop_img1_transformed"]
+                loftr_img1 = cv2.cvtColor(crop_img1_transformed, cv2.COLOR_BGR2GRAY)
+                loftr_img1 = torch.from_numpy(loftr_img1).float()[None] / 255.
+                loftr_img1 = loftr_img1.unsqueeze(0).to(device=device)
+                batch = {'image0':loftr_img0, 'image1':loftr_img1}
 
                 with torch.no_grad():
                     matcher(batch)
@@ -332,12 +334,11 @@ for label_idx, test_dict in enumerate(dir_list):
                 for idx, mkpt1 in enumerate(mkpts1):
                     ptx, pty = mkpt1
                     # print(ptx, pty)
-                    if crop_mask1[int(ptx)][int(pty)] == 255.0 and confidences[idx] > median_confidences:
-                        mkpts0_masked.append(mkpts0[idx])
-                        mkpts1_masked.append(mkpts1[idx])
-                        mconf_masked.append(confidences[idx])
-                    else:
-                        pass
+                    if crop_img1_transformed_mask[int(ptx)][int(pty)] == 0 or confidences[idx] < median_confidences:
+                        continue
+                    mkpts0_masked.append(mkpts0[idx])
+                    mkpts1_masked.append(mkpts1[idx])
+                    mconf_masked.append(confidences[idx])
 
                 mkpts0_masked = np.array(mkpts0_masked)
                 mkpts1_masked = np.array(mkpts1_masked)
@@ -345,43 +346,101 @@ for label_idx, test_dict in enumerate(dir_list):
 
                 conf_mask = np.where(confidences > 0.9)
                 matching_score[top_idx] = conf_mask[0].shape[0]
+
                 top_images[top_idx]["mkpts0"] = mkpts0
                 top_images[top_idx]["mkpts1"] = mkpts1
                 top_images[top_idx]["mkpts0_masked"] = mkpts0_masked
                 top_images[top_idx]["mkpts1_masked"] = mkpts1_masked
-                top_images[top_idx]["mconf"] = mconf_masked
-                top_images[top_idx]["crop_img0"] = crop_img0
-                top_images[top_idx]["crop_img1"] = crop_img1
+                top_images[top_idx]["mconf"] = confidences
+                top_images[top_idx]["mconf_masked"] = mconf_masked
 
-
+            # 保存匹配结果
             max_match_idx = np.argmax(matching_score)
-            if "crop_image" not in top_images[max_match_idx] or 'mkpts0' not in top_images[max_match_idx]:
+            if "crop_img1_transformed" not in top_images[max_match_idx] or 'mkpts0' not in top_images[max_match_idx]:
                 invalid_img += 1
+                invalid_img_path_list.append((image0_name, image1_name))
                 continue
+
             # print(matching_score, max_match_idx)
-            pre_bbox = top_images[max_match_idx]["bbox"]                # 需要保存
-            mkpts0 = top_images[max_match_idx]["mkpts0"]                # 需要保存
-            mkpts1 = top_images[max_match_idx]["mkpts1"]                # 需要保存
-            mkpts0_masked = top_images[max_match_idx]["mkpts0_masked"]  # 需要保存
-            mkpts1_masked = top_images[max_match_idx]["mkpts1_masked"]  # 需要保存
-            pre_K = top_images[max_match_idx]["K"]                      # 需要保存
-            mconf = top_images[max_match_idx]['mconf']                  # 需要保存
-            crop_img0 = top_images[max_match_idx]["crop_img0"]          # 需要保存
-            crop_img1 = top_images[max_match_idx]["crop_img1"]          # 需要保存
+            ## 数据
+            mkpts0 = top_images[max_match_idx]["mkpts0"]
+            mkpts1 = top_images[max_match_idx]["mkpts1"]
+            mkpts0_masked = top_images[max_match_idx]["mkpts0_masked"]
+            mkpts1_masked = top_images[max_match_idx]["mkpts1_masked"]
+            mconf = top_images[max_match_idx]['mconf_masked']
+            mconf_masked = top_images[max_match_idx]['mconf_masked']
+            pre_bbox = top_images[max_match_idx]["bbox"]
+            pre_K = top_images[max_match_idx]["K"]
+            # 图像
+            img0_to_save = image0
+            img1_to_save = top_images[max_match_idx]["crop_img1_transformed"]
+            img1_mask_to_save = top_images[max_match_idx]["crop_img1_transformed_mask"]
+
+            img1_masked_to_save = torch.masked_fill(
+                torch.tensor(img1_to_save).permute(2, 0, 1),
+                torch.tensor(img1_mask_to_save == 0), 0
+            ).permute(1, 2, 0).numpy()
+
+            img_pair = np.hstack((img0_to_save, img1_to_save, img1_masked_to_save))
+
             if (mkpts0_masked.shape[0] < 5 or mkpts1_masked.shape[0] < 5 or pre_K.shape[0] != 3):
                 invalid_img += 1
+                invalid_img_path_list.append((image0_name, image1_name))
                 continue
 
             assert len(mconf) == len(mkpts0_masked) and len(mconf) == len(mkpts1_masked)
 
-            np.savetxt(os.path.join(pre_bbox_path, f"{points_name}.txt"), pre_bbox)
-            np.savetxt(os.path.join(mkpts0_path, f"{points_name}.txt"), mkpts0_masked)
-            np.savetxt(os.path.join(mkpts1_path, f"{points_name}.txt"), mkpts1_masked)
-            np.savetxt(os.path.join(pre_K_path, f"{points_name}.txt"), pre_K)
-            np.savetxt(os.path.join(mconf_path, f'{points_name}.txt'), mconf)
-            cv2.imwrite(os.path.join(crop_img0_path, f"{points_name}.png"), crop_img0)
-            cv2.imwrite(os.path.join(crop_img1_path, f"{points_name}.png"), crop_img1)
+            # 保存匹配结果路径
+            ## 数据
+            mkpts0_path = os.path.join(points_file_path, "mkpts0_loftr")
+            mkpts1_path = os.path.join(points_file_path, "mkpts1_loftr")
+            mkpts0_masked_path = os.path.join(points_file_path, "mkpts0_masked_loftr")
+            mkpts1_masked_path = os.path.join(points_file_path, "mkpts1_masked_loftr")
+            mconf_path = os.path.join(points_file_path, 'mconf_loftr')
+            mconf_masked_path = os.path.join(points_file_path, 'mconf_masked_loftr')
+            pre_bbox_path = os.path.join(points_file_path, "pre_bbox_loftr")
+            pre_K_path = os.path.join(points_file_path, "pre_K_loftr")
+            Path(mkpts0_path).mkdir(parents=True, exist_ok=True)
+            Path(mkpts1_path).mkdir(parents=True, exist_ok=True)
+            Path(mkpts0_masked_path).mkdir(parents=True, exist_ok=True)
+            Path(mkpts1_masked_path).mkdir(parents=True, exist_ok=True)
+            Path(mconf_path).mkdir(parents=True, exist_ok=True)
+            Path(mconf_masked_path).mkdir(parents=True, exist_ok=True)
+            Path(pre_bbox_path).mkdir(parents=True, exist_ok=True)
+            Path(pre_K_path).mkdir(parents=True, exist_ok=True)
+            ## 图像
+            img0_to_save_path = os.path.join(points_file_path, "img0_loftr")
+            img1_to_save_path = os.path.join(points_file_path, "img1_loftr")
+            img1_mask_to_save_path = os.path.join(points_file_path, "img1_mask_loftr")
+            img1_masked_to_save_path = os.path.join(points_file_path, "img1_masked_loftr")
+            img_pair_path = os.path.join(points_file_path, "img_pair_loftr")
+            Path(img0_to_save_path).mkdir(parents=True, exist_ok=True)
+            Path(img1_to_save_path).mkdir(parents=True, exist_ok=True)
+            Path(img1_mask_to_save_path).mkdir(parents=True, exist_ok=True)
+            Path(img1_masked_to_save_path).mkdir(parents=True, exist_ok=True)
+            Path(img_pair_path).mkdir(parents=True, exist_ok=True)
+
+            points_name = pair_name.split("/")[-1]
+
+            ## 保存
+            ### 数据
+            torch.save(torch.tensor(mkpts0), os.path.join(mkpts0_path, f"{points_name}.pt"))
+            torch.save(torch.tensor(mkpts1), os.path.join(mkpts1_path, f"{points_name}.pt"))
+            torch.save(torch.tensor(mkpts0_masked), os.path.join(mkpts0_masked_path, f"{points_name}.pt"))
+            torch.save(torch.tensor(mkpts1_masked), os.path.join(mkpts1_masked_path, f"{points_name}.pt"))
+            torch.save(torch.tensor(mconf), os.path.join(mconf_path, f'{points_name}.pt'))
+            torch.save(torch.tensor(mconf_masked), os.path.join(mconf_masked_path, f'{points_name}.pt'))
+            torch.save(torch.tensor(pre_bbox), os.path.join(pre_bbox_path, f"{points_name}.pt"))
+            torch.save(torch.tensor(pre_K), os.path.join(pre_K_path, f"{points_name}.pt"))
+            ### 图像
+            cv2.imwrite(os.path.join(img0_to_save_path, f"{points_name}.png"), img0_to_save)
+            cv2.imwrite(os.path.join(img1_to_save_path, f"{points_name}.png"), img1_to_save)
+            cv2.imwrite(os.path.join(img1_mask_to_save_path, f"{points_name}.png"), img1_mask_to_save)
+            cv2.imwrite(os.path.join(img1_masked_to_save_path, f"{points_name}.png"), img1_masked_to_save)
+            cv2.imwrite(os.path.join(img_pair_path, f"{points_name}.png"), img_pair)
 
 
 logger.info(f'invalid_img: {invalid_img}')
 logger.info(f'all_img: {all_img}')
+for invalid_img_path in invalid_img_path_list:
+    print(invalid_img_path)
